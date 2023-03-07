@@ -1,9 +1,7 @@
 from typing import Any, Dict, Optional, Tuple
 
-import torch
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
-from torchvision.transforms import transforms
+from torch.utils.data import DataLoader, Dataset, random_split
 
 import requests
 from pathlib import Path
@@ -11,7 +9,7 @@ import tarfile
 from tqdm import tqdm
 import os
 
-from data.dataset.dlip import DLIP
+from dataset.dlip import DLIP
 
 class DLIPDataModule(LightningDataModule):
     """
@@ -134,6 +132,30 @@ class DLIPDataModule(LightningDataModule):
             shuffle=False,
         )
 
+def draw_batch(images, keypoints):
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(8,8))
+    #return print(key_points.shape)
+
+    for i in range(len(images)):
+        ax = fig.add_subplot(8, 8, i+1, xticks=[], yticks=[])
+        image = images[i]
+        for j in range(68):
+            plt.scatter((keypoints[i][j][0] + 0.5) *224, (keypoints[i][j][1]+0.5)*224, s=10, marker='.', c='r')
+        # plt.scatter(key_points[:,:1,i],key_points[:,:2,i],s=10, marker='.', c='r')
+        plt.imshow(image.permute(1, 2, 0))
+    plt.savefig('batch.png')
+
 
 if __name__ == "__main__":
-    _ = DLIPDataModule()
+    dlip = DLIPDataModule()
+    dlip.setup()
+    batch = next(iter(dlip.train_dataloader()))
+    image, keypoints = batch
+    # print("Batch shape:", len(batch))
+    # print('Image shape:', image.shape) # batch * 3 * 244 * 244
+    # print('Keypoints shape:', keypoints.shape) # batch * 68 * 2
+    draw_batch(image, keypoints)
+
+    # saveImage(image, keypoints)
