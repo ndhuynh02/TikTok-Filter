@@ -52,9 +52,6 @@ class DLIP(Dataset):
         image = read_image(path=self.root + image_path, mode=ImageReadMode.RGB) # channel x height x width
         
         image = image.permute(1, 2, 0).numpy() # height x width x channel
-        # print(image.shape)
-        # print("image width:", image_width)
-        # print('image height:', image_height)
 
         # in case if bounding box is outside image
         # https://stackoverflow.com/questions/35751306/python-how-to-pad-numpy-array-with-zeros
@@ -73,15 +70,14 @@ class DLIP(Dataset):
             # keypoints = keypoints - np.array([0, y_min])
             y_max -= y_min
             y_min = 0
-        # print("Shape after pad:", image.shape)
-        
         
         transform = A.Compose([A.Crop(x_min=x_min, y_min=y_min, 
                                     x_max=x_max, y_max=y_max),
                                 A.Resize(224, 224),
-                                ToTensorV2()],
+                                ToTensorV2()
+                                ],
                                     keypoint_params=A.KeypointParams(format='xy', remove_invisible=False))
-
+        
         transformed = transform(image=image, keypoints=keypoints)
         image = transformed['image']
         keypoints = transformed['keypoints']
@@ -102,10 +98,15 @@ class DLIPTransform(Dataset):
     def __getitem__(self, idx):
         image, keypoints = self.data[idx]
 
-        if transform:
+        image = image.permute(1, 2, 0).numpy() # height x width x channel
+        keypoints = ((keypoints + 0.5) * np.array([224, 224])).astype(np.uint8) # range [0; 224]
+        
+        if self.transform:
             transformed = self.transform(image=image, keypoints=keypoints)
             image = transformed['image']
             keypoints = transformed['keypoints'] 
+
+        keypoints = keypoints / np.array([224, 224]) - 0.5 # range [-0.5; 0.5] 
 
         return image, keypoints.astype(np.float64)
 
@@ -131,9 +132,23 @@ def saveImage(image, keypoints):
     image.save('foo.jpg')
 
 
-if __name__ == "__main__":
+def main():
     data = DLIP()
+    transform = A.Compose([
+        A.Rotate(limit=45), # [-45; 45]
+        A.RandomBrightnessContrast(),
+        A.RGBShift(),
+        ToTensorV2()
+        ], 
+        keypoint_params=A.KeypointParams(format='xy', remove_invisible=False)
+    )
+
+    data = DLIPTransform(data=data, transform=transform)
     image, keypoints = data[100]
     saveImage(image, keypoints)
+
+
+if __name__ == "__main__":
+    main()
 
     

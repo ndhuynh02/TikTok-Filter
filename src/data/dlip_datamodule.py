@@ -9,7 +9,10 @@ import tarfile
 from tqdm import tqdm
 import os
 
-from dataset.dlip import DLIP
+from dataset.dlip import DLIP, DLIPTransform
+
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 class DLIPDataModule(LightningDataModule):
     """
@@ -148,9 +151,28 @@ def draw_batch(images, keypoints):
     plt.savefig('batch.png')
 
 
-if __name__ == "__main__":
-    dlip = DLIPDataModule()
+@hydra.main(config_path='../../configs/data', config_name='dlip', version_base=None)
+def main(cfg: DictConfig):
+    # print(OmegaConf.to_yaml(cfg))
+    # return
+
+    import albumentations as A
+    from albumentations.pytorch import ToTensorV2
+    
+    dlip = hydra.utils.instantiate(cfg)
     dlip.setup()
+
+    transform = A.Compose([
+        A.Rotate(limit=45), # [-45; 45]
+        A.RandomBrightnessContrast(),
+        A.RGBShift(),
+        ToTensorV2()
+        ], 
+        keypoint_params=A.KeypointParams(format='xy', remove_invisible=False)
+    )
+
+    dlip.data_train = DLIPTransform(dlip.data_train, transform)
+
     batch = next(iter(dlip.train_dataloader()))
     image, keypoints = batch
     # print("Batch shape:", len(batch))
@@ -158,4 +180,6 @@ if __name__ == "__main__":
     # print('Keypoints shape:', keypoints.shape) # batch * 68 * 2
     draw_batch(image, keypoints)
 
-    # saveImage(image, keypoints)
+
+if __name__ == "__main__":
+    main()
