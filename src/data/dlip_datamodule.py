@@ -153,7 +153,7 @@ def draw_batch(images, keypoints):
 
 @hydra.main(config_path='../../configs/data', config_name='dlip', version_base=None)
 def main(cfg: DictConfig):
-    # print(OmegaConf.to_yaml(cfg))
+    # print(OmegaConf.to_yaml(cfg, resolve=True))
     # return
 
     import albumentations as A
