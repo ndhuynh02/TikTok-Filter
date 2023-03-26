@@ -777,7 +777,7 @@ defaults:
 
 # choose metric which will be optimized by Optuna
 # make sure this is the correct name of some metric logged in lightning module!
-optimized_metric: "val/acc_best"
+optimized_metric: "val/mae_best"
 
 # here we define Optuna hyperparameter search
 # it optimizes for value returned from function with @hydra.main decorator
@@ -995,7 +995,7 @@ class LitModel(LightningModule):
     def validation_step(self, batch, batch_idx):
         ...
         acc = self.val_acc(predictions, targets)
-        self.log("val/acc", acc)
+        self.log("val/mae", acc)
         ...
 ```
 

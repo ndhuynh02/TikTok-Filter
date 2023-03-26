@@ -1,7 +1,9 @@
 from typing import Any, Dict, Optional, Tuple
 
+import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset, random_split
+import albumentations as A
 
 import requests
 from pathlib import Path
@@ -9,12 +11,15 @@ import tarfile
 from tqdm import tqdm
 import os
 
-from dataset.dlip import DLIP, DLIPTransform
-
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-class DLIPDataModule(LightningDataModule):
+import pyrootutils
+pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+from src.data.components.dlib import DLIB, DLIBTransform
+
+
+class DLIBDataModule(LightningDataModule):
     """
     A DataModule implements 5 key methods:
 
@@ -41,6 +46,8 @@ class DLIPDataModule(LightningDataModule):
         self,
         data_dir: str = "data/",
         train_val_test_split: Tuple[int, int, int] = (0.8, 0.1, 0.1),
+        train_transform: Optional[A.Compose] = None,
+        valid_transform: Optional[A.Compose] = None,
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -61,8 +68,8 @@ class DLIPDataModule(LightningDataModule):
         Do not use it to assign state (self.x = y).
         """
 
-        folder = f'{self.hparams.data_dir}DLIP/'
-        file_name = 'dlip.tar.gz'
+        folder = f'{self.hparams.data_dir}DLIB/'
+        file_name = 'dlib.tar.gz'
         file_path = folder + file_name
 
         if (os.path.exists(file_path)):
@@ -92,7 +99,7 @@ class DLIPDataModule(LightningDataModule):
         file.extractall('.')
         file.close()
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
         import numpy as np
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
@@ -101,12 +108,15 @@ class DLIPDataModule(LightningDataModule):
         """
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            dataset = DLIP()
+            dataset = DLIB()
             self.data_train, self.data_val, self.data_test = random_split(
                 dataset=dataset,
                 lengths= self.hparams.train_val_test_split,
-                # generator=torch.Generator().manual_seed(42),
+                generator=torch.Generator().manual_seed(42),
             )
+            self.data_train = DLIBTransform(self.data_train, self.hparams.train_transform)
+            self.data_val = DLIBTransform(self.data_val, self.hparams.valid_transform)
+            self.data_test = DLIBTransform(self.data_test, self.hparams.valid_transform)
 
     def train_dataloader(self):
         return DataLoader(
@@ -134,6 +144,26 @@ class DLIPDataModule(LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
         )
+    # def draw_batch(self):
+    #     import math
+    #     import matplotlib.pyplot as plt
+
+    #     images, landmarks = next(iter(self.train_dataloader()))
+    #     batch_size = len(images)
+    #     grid_size = math.sqrt(batch_size)
+    #     grid_size = math.ceil(grid_size)
+    #     fig = plt.figure(figsize=(10, 10))
+    #     fig.subplots_adjust(left = 0, right = 1, bottom = 0, top = 1, hspace = 0.05, wspace = 0.05)
+    #     for i in range(batch_size):
+    #         ax = fig.add_subplot(grid_size, grid_size, i+1, xticks=[], yticks=[])
+    #         image, landmark = images[i], landmarks[i]
+    #         image = image.squeeze().permute(1,2,0)
+    #         plt.imshow(image)
+    #         kpt = []
+    #         for j in range(68):
+    #             kpt.append(plt.plot(landmark[j][0], landmark[j][1], 'g.'))
+    #     plt.tight_layout()
+    #     plt.savefig('batch.png')
 
 def draw_batch(images, keypoints):
     import matplotlib.pyplot as plt
@@ -144,14 +174,14 @@ def draw_batch(images, keypoints):
     for i in range(len(images)):
         ax = fig.add_subplot(8, 8, i+1, xticks=[], yticks=[])
         image = images[i]
+        assert len(keypoints[i]) == 68
         for j in range(68):
-            plt.scatter((keypoints[i][j][0] + 0.5) *224, (keypoints[i][j][1]+0.5)*224, s=10, marker='.', c='r')
-        # plt.scatter(key_points[:,:1,i],key_points[:,:2,i],s=10, marker='.', c='r')
+            plt.scatter((keypoints[i][j][0] + 0.5) *224, (keypoints[i][j][1] + 0.5)*224, s=10, marker='.', c='r')
         plt.imshow(image.permute(1, 2, 0))
     plt.savefig('batch.png')
 
 
-@hydra.main(config_path='../../configs/data', config_name='dlip', version_base=None)
+@hydra.main(config_path='../../configs/data', config_name='dlib', version_base=None)
 def main(cfg: DictConfig):
     # print(OmegaConf.to_yaml(cfg, resolve=True))
     # return
@@ -159,8 +189,8 @@ def main(cfg: DictConfig):
     import albumentations as A
     from albumentations.pytorch import ToTensorV2
     
-    dlip = hydra.utils.instantiate(cfg)
-    dlip.setup()
+    dlib = hydra.utils.instantiate(cfg)
+    dlib.setup()
 
     transform = A.Compose([
         A.Rotate(limit=45), # [-45; 45]
@@ -171,9 +201,10 @@ def main(cfg: DictConfig):
         keypoint_params=A.KeypointParams(format='xy', remove_invisible=False)
     )
 
-    dlip.data_train = DLIPTransform(dlip.data_train, transform)
+    dlib.data_train = DLIBTransform(dlib.data_train, transform)
+    # dlib.draw_batch()
 
-    batch = next(iter(dlip.train_dataloader()))
+    batch = next(iter(dlib.train_dataloader()))
     image, keypoints = batch
     # print("Batch shape:", len(batch))
     # print('Image shape:', image.shape) # batch * 3 * 244 * 244
