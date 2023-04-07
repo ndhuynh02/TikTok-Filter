@@ -2,9 +2,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-class CNN(nn.Module):
+class SimpleCNN(nn.Module):
     def __init__(self, output_shape=[68, 2]):
-        super(CNN, self).__init__()
+        super(SimpleCNN, self).__init__()
         self.output_shape = output_shape
 
         self.conv1 = nn.Conv2d(3, 32, 3, 1, 1)

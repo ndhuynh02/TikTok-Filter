@@ -14,5 +14,6 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.components.simple_cnn.CNN
+  _target_: src.models.components.simple_resnet.SimpleResnet
+  model_name: 'resnet50'
   output_shape: [68, 2]

@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset
-from torchvision.io import read_image
+import torchvision
 from torchvision.io import ImageReadMode
 
 import torch
@@ -37,8 +37,6 @@ class DLIB(Dataset):
     def __getitem__(self, idx: int):
         image = self.data[idx]
         image_path = image.getAttribute('file')
-        image_width = int(image.getAttribute('width'))
-        image_height = int(image.getAttribute('height'))
 
         keypoints = []
         for points in image.getElementsByTagName('part'):
@@ -50,51 +48,23 @@ class DLIB(Dataset):
         x_max = x_min + int(bbox.getAttribute('width'))
         y_max = y_min + int(bbox.getAttribute('height'))
 
-        # image = read_image(path=self.root + image_path, mode=ImageReadMode.RGB) # channel x height x width
-        
-        # image = image.permute(1, 2, 0).numpy() # height x width x channel
-
-        # # in case if bounding box is outside image
-        # # https://stackoverflow.com/questions/35751306/python-how-to-pad-numpy-array-with-zeros
-        # # np.pad(image, [(top, bot), (left, right), (front, back)])
-        # # print("Before padded:", image.shape)
-        # if x_max > image_width:
-        #     image = np.pad(image, [(0, 0), (0, x_max - image_width), (0, 0)], mode='constant', constant_values=255)
-        # if y_max > image_height:
-        #     image = np.pad(image, [(0, y_max - image_height),(0, 0), (0, 0)], mode='constant', constant_values=255)
-        # if x_min < 0:
-        #     image = np.pad(image, [(0, 0), (x_min * -1, 0), (0, 0)], mode='constant', constant_values=255)
-        #     keypoints = keypoints - np.array([x_min, 0]) 
-        #     x_max -= x_min
-        #     x_min = 0
-        # if y_min < 0:
-        #     image = np.pad(image, [(y_min * -1, 0),(0, 0), (0, 0)], mode='constant', constant_values=255)
-        #     keypoints = keypoints - np.array([0, y_min])
-        #     y_max -= y_min
-        #     y_min = 0
-
-        # transform = A.Compose([A.Crop(x_min=x_min, y_min=y_min, 
-        #                             x_max=x_max, y_max=y_max),
-        #                         A.Resize(224, 224),
-        #                         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        #                         ToTensorV2()
-        #                         ],
-        #                             keypoint_params=A.KeypointParams(format='xy', remove_invisible=False))
-        
-        # transformed = transform(image=image, keypoints=keypoints)
-        # image = transformed['image']
-        # keypoints = transformed['keypoints']
-
         image: Image = Image.open(self.root + image_path).convert('RGB')
         image: Image = image.crop((x_min, y_min, x_max, y_max))
-        image = np.array(image)
-
-        keypoints = (keypoints / np.array([224, 224]) - 0.5).astype(np.float32) # range [-0.5; 0.5]  
+        
+        keypoints -= np.array([x_min, y_min])  # crop
 
         return image, keypoints
     
     def __len__(self):
         return len(self.data)
+    
+    @staticmethod
+    def annotate_image(image: Image, landmarks: np.ndarray) -> Image:
+        draw = ImageDraw.Draw(image)
+        for i in range(landmarks.shape[0]):
+            draw.ellipse((landmarks[i, 0] - 2, landmarks[i, 1] - 2,
+                          landmarks[i, 0] + 2, landmarks[i, 1] + 2), fill=(0, 255, 0))
+        return image
 
 
 class DLIBTransform(Dataset):
@@ -113,59 +83,54 @@ class DLIBTransform(Dataset):
 
     def __getitem__(self, idx):
         image, keypoints = self.data[idx]
-        keypoints = ((keypoints + 0.5) * np.array([224, 224])).astype(np.uint16) # range [0; 224]
+        image = np.array(image)
+        h, w, _ = image.shape
 
-        
         # image = image.permute(1, 2, 0).numpy() # height x width x channel
-
         transformed = self.transform(image=image, keypoints=keypoints)
         image = transformed['image']
         keypoints = transformed['keypoints'] 
 
-        keypoints = keypoints / np.array([224, 224]) - 0.5 # range [-0.5; 0.5] 
+        _, h, w = image.shape
+        keypoints = keypoints / np.array([w, h]) - 0.5 # range [-0.5; 0.5] 
 
         return image, keypoints.astype(np.float32)
 
     def __len__(self):
         return len(self.data)
+    
+    @staticmethod
+    def annotate_tensor(image: torch.Tensor, landmarks: np.ndarray) -> Image:
 
+        IMG_MEAN = [0.485, 0.456, 0.406]
+        IMG_STD = [0.229, 0.224, 0.225]
 
-def saveImage(image, keypoints):
-    toPil = T.ToPILImage()
+        def denormalize(x, mean=IMG_MEAN, std=IMG_STD) -> torch.Tensor:
+            # 3, H, W, B
+            ten = x.clone().permute(1, 2, 3, 0)
+            for t, m, s in zip(ten, mean, std):
+                t.mul_(s).add_(m)
+            # B, 3, H, W
+            return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2)
 
-    image = toPil(image)
+        images = denormalize(image)
+        images_to_save = []
+        for lm, img in zip(landmarks, images):
+            img = img.permute(1, 2, 0).numpy()*255
+            h, w, _ = img.shape
+            lm = (lm + 0.5) * np.array([w, h]) # convert to image pixel coordinates
+            img = DLIB.annotate_image(Image.fromarray(img.astype(np.uint8)), lm)
+            images_to_save.append(torchvision.transforms.ToTensor()(img) )
 
-    # w, h = image.size
-    w, h = (224, 224)
-    keypoints = ((keypoints + 0.5) * np.array([w, h])).astype(np.uint16) # scale up
-    # print(keypoints)
-
-    draw = ImageDraw.Draw(image)
-
-    for x, y in keypoints:
-        # print(x, y)
-        draw.ellipse((x-2, y-2, x+2, y+2), fill=(255, 0, 0))
-
-    image.save('foo.jpg')
-
+        return torch.stack(images_to_save)
+    
 
 def main():
     data = DLIB()
-    transform = A.Compose([
-        A.Rotate(limit=45), # [-45; 45]
-        A.RandomBrightnessContrast(),
-        A.RGBShift(),
-        ToTensorV2()
-        ], 
-        keypoint_params=A.KeypointParams(format='xy', remove_invisible=False)
-    )
-
-    data = DLIBTransform(data=data, transform=transform)
-    image, keypoints = data[30]
-    saveImage(image, keypoints)
+    image, keypoints = data[0]
+    annotated_image = DLIB.annotate_image(image, keypoints)
+    annotated_image.save("foo.jpg")
 
 
 if __name__ == "__main__":
     main()
-
-    

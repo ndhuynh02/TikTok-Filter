@@ -73,7 +73,7 @@ class DLIBDataModule(LightningDataModule):
         file_path = folder + file_name
 
         if (os.path.exists(file_path)):
-            print("File is downloaded")
+            print("Data is downloaded")
             return
 
         # creating a new directory 
@@ -166,50 +166,61 @@ class DLIBDataModule(LightningDataModule):
     #     plt.savefig('batch.png')
 
 def draw_batch(images, keypoints):
+    # images: torch.float32 (batch x channel x height x width)
+    _, _, h, w = images.shape
+    
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(8,8))
-    #return print(key_points.shape)
+    IMG_MEAN = [0.485, 0.456, 0.406]
+    IMG_STD = [0.229, 0.224, 0.225]
 
+    def denormalize(x, mean=IMG_MEAN, std=IMG_STD) -> torch.Tensor:
+        ten = x.clone().permute(1, 2, 3, 0) # channel x height x width x batch
+        for t, m, s in zip(ten, mean, std):
+            t.mul_(s).add_(m)
+        # B, 3, H, W
+        return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2) # batch x channel x height x width
+
+    fig = plt.figure(figsize=(8,8))
+
+    images = denormalize(images)
     for i in range(len(images)):
         ax = fig.add_subplot(8, 8, i+1, xticks=[], yticks=[])
-        image = images[i]
+        img = images[i]
         assert len(keypoints[i]) == 68
         for j in range(68):
-            plt.scatter((keypoints[i][j][0] + 0.5) *224, (keypoints[i][j][1] + 0.5)*224, s=10, marker='.', c='r')
-        plt.imshow(image.permute(1, 2, 0))
+            plt.scatter((keypoints[i][j][0] + 0.5) * w, (keypoints[i][j][1] + 0.5) * h, s=10, marker='.', c='r')
+        plt.imshow(img.permute(1, 2, 0))
     plt.savefig('batch.png')
 
 
 @hydra.main(config_path='../../configs/data', config_name='dlib', version_base=None)
 def main(cfg: DictConfig):
-    # print(OmegaConf.to_yaml(cfg, resolve=True))
-    # return
-
     import albumentations as A
     from albumentations.pytorch import ToTensorV2
-    
-    dlib = hydra.utils.instantiate(cfg)
-    dlib.setup()
+    import torchvision
 
     transform = A.Compose([
+        A.Resize(224, 224),
         A.Rotate(limit=45), # [-45; 45]
         A.RandomBrightnessContrast(),
         A.RGBShift(),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2()
         ], 
         keypoint_params=A.KeypointParams(format='xy', remove_invisible=False)
     )
-
-    dlib.data_train = DLIBTransform(dlib.data_train, transform)
-    # dlib.draw_batch()
+    
+    dlib = hydra.utils.instantiate(cfg, train_transform=transform)
+    dlib.setup()
 
     batch = next(iter(dlib.train_dataloader()))
     image, keypoints = batch
     # print("Batch shape:", len(batch))
     # print('Image shape:', image.shape) # batch * 3 * 244 * 244
     # print('Keypoints shape:', keypoints.shape) # batch * 68 * 2
-    draw_batch(image, keypoints)
+    annotated_batch = DLIBTransform.annotate_tensor(image, keypoints)
+    torchvision.utils.save_image(annotated_batch, "batch.png")
 
 
 if __name__ == "__main__":
