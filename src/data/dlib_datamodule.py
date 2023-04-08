@@ -46,8 +46,8 @@ class DLIBDataModule(LightningDataModule):
         self,
         data_dir: str = "data/",
         train_val_test_split: Tuple[int, int, int] = (0.8, 0.1, 0.1),
-        train_transform: Optional[A.Compose] = None,
-        valid_transform: Optional[A.Compose] = None,
+        transform_train: Optional[A.Compose] = None,
+        transform_val: Optional[A.Compose] = None,
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -114,9 +114,9 @@ class DLIBDataModule(LightningDataModule):
                 lengths= self.hparams.train_val_test_split,
                 generator=torch.Generator().manual_seed(42),
             )
-            self.data_train = DLIBTransform(self.data_train, self.hparams.train_transform)
-            self.data_val = DLIBTransform(self.data_val, self.hparams.valid_transform)
-            self.data_test = DLIBTransform(self.data_test, self.hparams.valid_transform)
+            self.data_train = DLIBTransform(self.data_train, self.hparams.transform_train)
+            self.data_val = DLIBTransform(self.data_val, self.hparams.transform_val)
+            self.data_test = DLIBTransform(self.data_test, self.hparams.transform_val)
 
     def train_dataloader(self):
         return DataLoader(

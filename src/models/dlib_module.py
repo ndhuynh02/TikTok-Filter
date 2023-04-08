@@ -6,7 +6,6 @@ from torchmetrics import MinMetric, MeanMetric
 from torchmetrics.regression.mae import MeanAbsoluteError
 
 
-
 class DLIBLitModule(LightningModule):
     """Example of LightningModule for MNIST classification.
 
@@ -154,32 +153,6 @@ class DLIBLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-    
-    def log_batch(self, images, keypoints):
-        import matplotlib.pyplot as plt
-
-        IMG_MEAN = [0.485, 0.456, 0.406]
-        IMG_STD = [0.229, 0.224, 0.225]
-
-        def denormalize(x, mean=IMG_MEAN, std=IMG_STD) -> torch.Tensor:
-            ten = x.clone().permute(1, 2, 3, 0) # channel x height x width x batch
-            for t, m, s in zip(ten, mean, std):
-                t.mul_(s).add_(m)
-            # B, 3, H, W
-            return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2) # batch x channel x height x width
-
-        fig = plt.figure(figsize=(8,8))
-        images = denormalize(images)
-        _, _, h, w = images.shape
-
-        for i in range(len(images)):
-            ax = fig.add_subplot(8, 8, i+1, xticks=[], yticks=[])
-            img = images[i]
-            assert len(keypoints[i]) == 68
-            for j in range(68):
-                plt.scatter((keypoints[i][j][0] + 0.5) * w, (keypoints[i][j][1] + 0.5) * h, s=10, marker='.', c='r')
-            plt.imshow(img.permute(1, 2, 0))
-        self.log('First batch images', fig, prog_bar=True)
 
 
 if __name__ == "__main__":
