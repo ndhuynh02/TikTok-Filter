@@ -1,8 +1,15 @@
 _target_: src.data.dlib_datamodule.DLIBDataModule
+
+defaults:
+  - transform_train: cutout.yaml
+  - transform_val: default.yaml
+
 data_dir: ${paths.data_dir}
 # data_dir: 'data/'
-batch_size: 64
+
 train_val_test_split: [0.8, 0.1, 0.1]
 
+batch_size: 32
 num_workers: 12
+
 pin_memory: False
