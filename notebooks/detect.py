@@ -1,13 +1,12 @@
 from typing import Optional
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import pyrootutils
 
 import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from PIL import Image, ImageDraw
 import numpy as np
 
 import cv2
@@ -16,17 +15,21 @@ from deepface.detectors import FaceDetector
 import pyrootutils
 pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 from src.models.dlib_module import DLIBLitModule
-from src.data.components.dlib import DLIB
-from src.models.components.simple_cnn import SimpleCNN
 
 
 def detect(cfg: DictConfig, option: Optional[str] = None):
     net = hydra.utils.instantiate(cfg.net)
 
-    model = DLIBLitModule.load_from_checkpoint('logs/train/runs/2023-04-08_15-12-10/checkpoints/epoch_000.ckpt', 
+    """
+    check points:
+        resnet18: logs/train/runs/2023-04-22_09-27-13/checkpoints/epoch_000.ckpt
+        resnet50: logs/train/runs/2023-04-08_20-50-12/checkpoints/epoch_000.ckpt
+    """
+    model = DLIBLitModule.load_from_checkpoint('logs/train/runs/2023-04-08_20-50-12/checkpoints/epoch_000.ckpt', 
                                                net=net)
     
-    transform = A.Compose([A.Resize(224, 224),
+    transform = A.Compose([A.Resize(256, 256),
+                           A.CenterCrop(224, 224),
                             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                             ToTensorV2()
                             ])
@@ -69,7 +72,7 @@ def detect(cfg: DictConfig, option: Optional[str] = None):
                 keypoints = model(transformed_image).detach().numpy()[0]
 
                 h, w, _ = image.shape
-                keypoints = ((keypoints + 0.5) * np.array([w, h]) + np.array(bbox[:2])).astype(np.uint16)
+                keypoints = ((keypoints + 0.5) * np.array([w, h]) + np.array(bbox[:2])).astype(np.uint32)
 
                 for point in keypoints:
                     frame = cv2.circle(frame, point, 3, (0, 255, 0), thickness=-1)
@@ -82,23 +85,6 @@ def detect(cfg: DictConfig, option: Optional[str] = None):
         # Break the loop
         else:
             break
-    
-    # image =  Image.open(option).convert('RGB')
-
-    # transformed_image = np.array(image)
-    # transformed = transform(image=transformed_image)
-    # transformed_image = transformed['image']
-
-    # transformed_image = torch.unsqueeze(transformed_image, dim=0)
-
-    # keypoints = model(transformed_image)
-
-    # h, w = image.size
-    # keypoints = keypoints.detach().numpy()[0]
-    # keypoints = (keypoints + 0.5) * np.array([w, h]) # convert to image pixel coordinates
-
-    # output = DLIB.annotate_image(image, keypoints)
-    # output.save('output.png')
 
 
 if __name__ == "__main__":
@@ -109,6 +95,6 @@ if __name__ == "__main__":
 
     @hydra.main(version_base="1.3", config_path=config_path, config_name="dlib.yaml")
     def main(cfg: DictConfig):
-        detect(cfg=cfg, option='testVideo.mp4')
+        detect(cfg=cfg, option='noGlasses.mp4')
 
     main()
